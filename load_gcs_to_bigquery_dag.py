@@ -1,6 +1,6 @@
 from datetime import datetime
 from airflow import DAG
-from airflow.providers.standard.operators.python import PythonOperator
+from airflow.operators.python import PythonOperator
 from airflow.providers.google.cloud.transfers.gcs_to_bigquery import GCSToBigQueryOperator
 
 import csv
@@ -18,15 +18,19 @@ GCS_FILE = "employee_data.csv"
 BIGQUERY_DATASET = "handson2"
 BIGQUERY_TABLE = "example"
 
-file_path = "/opt/airflow/dags/employee_data.csv"   # ✅ persistent path
+# ✅ Local Mac path (FIXED)
+file_path = os.path.expanduser('~/airflow/logs/employee_data.csv')
 
 fake = Faker()
-password_characters = string.ascii_letters + string.digits + 'm'
+password_characters = string.ascii_letters + string.digits
 
 
 # ================= STEP 1 =================
 def generate_csv():
-    print("Generating file...")
+    print("Generating CSV file...")
+
+    # ensure directory exists
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
 
     with open(file_path, mode='w', newline='') as file:
         fieldnames = [
@@ -50,12 +54,12 @@ def generate_csv():
                 "password": ''.join(random.choice(password_characters) for _ in range(8))
             })
 
-    print("File created:", file_path)
+    print(f"✅ File created at: {file_path}")
 
 
 # ================= STEP 2 =================
 def upload_to_gcs():
-    print("Uploading to GCS...")
+    print("Uploading file to GCS...")
 
     client = storage.Client()
     bucket = client.bucket(BUCKET_NAME)
@@ -63,16 +67,16 @@ def upload_to_gcs():
 
     blob.upload_from_filename(file_path)
 
-    print("Upload complete!")
+    print(f"✅ Uploaded to bucket: {BUCKET_NAME}")
 
 
 # ================= DAG =================
 with DAG(
     dag_id="gcp_full_etl_pipeline",
-    start_date=datetime(2023, 1, 1),
+    start_date=datetime(2024, 1, 1),
     schedule=None,
     catchup=False,
-    tags=["gcp", "bigquery"],
+    tags=["gcp", "etl", "bigquery"],
 ) as dag:
 
     generate_task = PythonOperator(
@@ -85,17 +89,17 @@ with DAG(
         python_callable=upload_to_gcs,
     )
 
-    # ================= STEP 3 (NEW) =================
-    load_to_bq = GCSToBigQueryOperator(
+    load_to_bigquery = GCSToBigQueryOperator(
         task_id="load_to_bigquery",
         bucket=BUCKET_NAME,
         source_objects=[GCS_FILE],
         destination_project_dataset_table=f"{PROJECT_ID}.{BIGQUERY_DATASET}.{BIGQUERY_TABLE}",
         source_format="CSV",
         skip_leading_rows=1,
-        write_disposition="WRITE_TRUNCATE",  # overwrite
+        write_disposition="WRITE_TRUNCATE",
         autodetect=True,
+        gcp_conn_id="google_cloud_default",  # ✅ REQUIRED
     )
 
-    # Pipeline flow
-    generate_task >> upload_task >> load_to_bq
+    # DAG flow
+    generate_task >> upload_task >> load_to_bigquery

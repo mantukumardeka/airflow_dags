@@ -9,19 +9,22 @@ import string
 from google.cloud import storage
 import os
 
-# Config
+# ✅ Config
 bucket_name = 'random_landing_data'
-file_path = '/opt/airflow/logs/employee_data.csv'   # ✅ IMPORTANT FIX
+
+# ✅ Correct path for LOCAL (Mac)
+file_path = os.path.expanduser('~/airflow/logs/employee_data.csv')
 
 fake = Faker()
-password_characters = string.ascii_letters + string.digits + 'm'
+password_characters = string.ascii_letters + string.digits
 
 
-# ✅ Step 1: Generate CSV (your logic preserved)
+# ✅ Step 1: Generate CSV
 def generate_csv():
     print("Starting file generation...")
 
-    num_employees = 100
+    # Ensure directory exists
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
 
     with open(file_path, mode='w', newline='') as file:
         fieldnames = [
@@ -32,7 +35,7 @@ def generate_csv():
         writer = csv.DictWriter(file, fieldnames=fieldnames)
         writer.writeheader()
 
-        for _ in range(num_employees):
+        for _ in range(100):
             writer.writerow({
                 "first_name": fake.first_name(),
                 "last_name": fake.last_name(),
@@ -45,27 +48,28 @@ def generate_csv():
                 "password": ''.join(random.choice(password_characters) for _ in range(8))
             })
 
-    print("File created successfully!")
-    print("Files in logs folder:", os.listdir("/opt/airflow/logs"))
+    print(f"✅ File created at: {file_path}")
 
 
-# ✅ Step 2: Upload to GCS (your function reused)
+# ✅ Step 2: Upload to GCS
 def upload_to_gcs():
     print("Starting upload to GCS...")
 
+    # Uses GOOGLE_APPLICATION_CREDENTIALS
     storage_client = storage.Client()
+
     bucket = storage_client.bucket(bucket_name)
     blob = bucket.blob('employee_data.csv')
 
     blob.upload_from_filename(file_path)
 
-    print(f'File uploaded to GCS bucket: {bucket_name}')
+    print(f"✅ File uploaded to GCS bucket: {bucket_name}")
 
 
 # ✅ DAG definition
 with DAG(
     dag_id="gcp_fake_data_pipeline",
-    start_date=datetime(2023, 1, 1),
+    start_date=datetime(2024, 1, 1),
     schedule=None,
     catchup=False,
     tags=["gcp", "etl"],
